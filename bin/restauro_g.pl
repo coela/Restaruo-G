@@ -1,12 +1,15 @@
 use strict;
 use G;
 use SWISS::Entry;
-
+use SWISS::IDs;
 use Storable qw(nstore store_fd nstore_fd freeze thaw dclone);
 use TokyoCabinet;
+use Data::Dumper;
+
+my @databases = ('sprot');
 
 my %files;
-$files{'cds_fasta'} = "$ENV{'HOME'}/.glang/restauro_g/tmp/cds_fasta.fasta";
+$files{'cds_fasta'} = "$ENV{'HOME'}/.restauro_g/tmp/cds_fasta.fasta";
 $files{'cds_fasta'} = "./hoge.fasta";
 $files{'trembl_fasta'} = "$ENV{'HOME'}/.glang/restauro_g/uniprot/trembl_fasta.fasta";
 $files{'blast_output'} = "hoge.out";
@@ -26,60 +29,74 @@ if(!$tc_length->open("uniprot_length.tch", $tc_length->OWRITER | $tc_length->OCR
 	printf STDERR ("open error: %s\n", $tc_length->errmsg($ecode));
 }
 
-
+###
 my $gb = load ($ARGV[0]);
 $gb->disable_pseudogenes();
 
-
-#store_uniprot_to_kt();
-## create CDS ##
-open my $CDS_FASTA, '>', $files{'cds_fasta'} or die;
-for my $cds ( $gb->feature('CDS') ) {
-	my $translate = $gb->{$cds}->{'translation'} or translate $gb->get_geneseq($cds);
-	print $CDS_FASTA '>'.$cds."\n";
-	print $CDS_FASTA $translate."\n";
-
+foreach my $database (@databases){
+	create_fasta($gb);
+	perform_blast_search($gb, $database);
 }
-close $CDS_FASTA;
+###
 
-## BLAST ##
-my $last_query;
-my $blast;
-#system("blastp -query $files{'cds_fasta'} -db $files{'sprot_fasta'} -outfmt 6 -out $files{'blast_output'} -max_target_seqs 5 -num_threads 4");
+sub perform_blast_search {
+	my $gb = shift;
+	my $database = shift;
+#system("blastp -query $files{'cds_fasta'} -db $files{"${database}_fasta"} -outfmt 6 -out $files{'blast_output'} -max_target_seqs 5 -num_threads 4");
+	my $last_query;
+	my $blast;
+	open my $BLAST_OUTPUT, $files{'blast_output'} or die;
+	while(<$BLAST_OUTPUT>){
+		chomp;
+		my @line = split /\t/;
+		my $subject_seq_length = $tc_length->get($line[1]);
+		my $identity = $line[3]/$subject_seq_length;
+		my $evalue = $line[10];
 
-open my $BLAST_OUTPUT, $files{'blast_output'} or die;
-while(<$BLAST_OUTPUT>){
-	chomp;
-	my @line = split /\t/;
-#	my $uniprot = thaw $tc->get($line[1]);
-	my $subject_seq_length = $tc_length->get($line[1]);
-	my $identity = $line[3]/$subject_seq_length;
-	my $evalue = $line[11];
+		if ($evalue <= 1e-70 and $identity >= 0.98){
+			$blast->{$line[1]}->{'level'} = 1;
+		}
+		elsif($evalue <=1e-50 and $identity >= 0.95){
+			$blast->{$line[1]}->{'level'} = 2;
+		}
+		elsif($evalue <=1e-30 and $identity >= 0.90){
+			$blast->{$line[1]}->{'level'} = 3;
+		}
+		elsif($evalue <=1e-10 and $identity >= 0.80){
+			$blast->{$line[1]}->{'level'} = 4;
+		}
+		else{
+			$blast->{$line[1]}->{'level'} = 5;
+		}
 
-	if ($evalue <= 1e-70 and $identity >= 0.98){
-		$blast->{$line[0]}->{'level'} = 1;
-	}
-	elsif($evalue <=1e-50 and $identity >= 0.95){
-		$blast->{$line[0]}->{'level'} = 2;
-	}
-	elsif($evalue <=1e-30 and $identity >= 0.90){
-		$blast->{$line[0]}->{'level'} = 3;
-	}
-	elsif($evalue <=1e-10 and $identity >= 0.80){
-		$blast->{$line[0]}->{'level'} = 4;
-	}
+		$blast->{$line[1]}->{'e_value'} = $evalue;
+		$blast->{$line[1]}->{'identity'} = $identity;
 
-	$blast->{$line[0]}->{'e_value'} = $line[11];
-	$blast->{$line[0]}->{'identity'} = $line[3]/$subject_seq_length;
+		if ($line[0] ne $last_query or eof){
+			my @args = sort { $blast->{$a}->{'level'} <=> $blast->{$b}->{'level'}	
+				or $blast->{$a}->{'e_value'} <=> $blast->{$b}->{'e_value'}
+				or $blast->{$b}->{'identity'} <=> $blast->{$a}->{'identity'}
+			} keys %$blast;
+			my $tophit = shift @args;
+			my $uniprot = thaw $tc->get($tophit);
 
-	if ($line[0] ne $last_query or eof){
-		my @args = sort { $blast->{$a}->{'level'} <=> $blast->{$b}->{'level'}	
-			or $blast->{$a}->{'e_value'} <=> $blast->{$b}->{'e_value'}
-			or $blast->{$b}->{'identity'} <=> $blast->{$a}->{'identity'}
-		} keys %$blast;
-		$blast = {};
+			$gb->{$last_query}->{on} = 0 if $blast->{$tophit}->{"level"} <= 2;
+			print $last_query, " ",$uniprot->ID," ",$blast->{$tophit}->{e_value},"\n";
+			$blast = {};
+		}
+		$last_query = $line[0];
 	}
-	$last_query = $line[0];
+}
+
+sub create_fasta {
+	my $gb = shift;
+	open my $CDS_FASTA, '>', $files{'cds_fasta'} or die;
+	for my $cds ( $gb->feature('CDS') ) {
+		my $translate = $gb->{$cds}->{'translation'} or translate $gb->get_geneseq($cds);
+		print $CDS_FASTA '>'.$cds."\n";
+		print $CDS_FASTA $translate."\n";
+	}
+	close $CDS_FASTA;
 }
 
 sub store_uniprot_to_kt {
