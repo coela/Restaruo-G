@@ -7,9 +7,12 @@ use SWISS::IDs;
 use Storable qw(nstore store_fd nstore_fd freeze thaw dclone);
 use TokyoCabinet;
 use Data::Dumper;
-
 use File::Spec;
+use File::Spec::Functions qw( catfile );
+use File::Path::Tiny;
 
+my $ROOT					= $ENV{RESTAURO_G_ROOT} || catfile($ENV{HOME},"perl5","restauro_g");
+my $RESTAURO_HOME = $ENV{RESTAURO_G_HOME} || catfile($ENV{HOME},".restauro_g"); 
 my @databases = ('sprot');
 
 my %files;
@@ -150,7 +153,7 @@ sub install_restauro {
 		exit;
 	}
 
-	mkdir("$ROOT/bin");
+	File::Path::Tiny::mk("$ROOT/bin");
 	File::Copy::copy($executable,$install_target);
 	chmod (0755, $install_target);
 }
@@ -213,5 +216,3 @@ arising from the use of the software.
 =head1 SEE ALSO
 
 =cut
-
-1;
