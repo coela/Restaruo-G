@@ -1,8 +1,9 @@
 use strict;
 use Test::More tests => 1;
+use lib qw(lib);
 
 BEGIN{
-	require_ok 'Restauro-G';
+	use_ok('App::restauro_g');
 }
 
 __DATA__

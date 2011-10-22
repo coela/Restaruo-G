@@ -1,6 +1,9 @@
 package Restauro_G;
 our $VERSION = "1.1";
 
+use strict;
+use warnings;
+
 use G;
 use SWISS::Entry;
 use SWISS::IDs;
@@ -13,6 +16,7 @@ use File::Path::Tiny;
 
 my $ROOT					= $ENV{RESTAURO_G_ROOT} || catfile($ENV{HOME},"perl5","restauro_g");
 my $RESTAURO_HOME = $ENV{RESTAURO_G_HOME} || catfile($ENV{HOME},".restauro_g"); 
+
 my @databases = ('sprot');
 
 my %files;
@@ -37,30 +41,34 @@ if(!$tc_length->open("uniprot_length.tch", $tc_length->OWRITER | $tc_length->OCR
 }
 
 ###
+
 my $gb = load ($ARGV[0]);
 $gb->disable_pseudogenes();
-
 foreach my $database (@databases){
+	print $database."\n";
 	create_fasta($gb);
-	perform_blast_search($gb, $database);
+#	perform_blast_search($gb, $database);
 }
 ###
 
 sub new {
-	my ($class,@a4gv)		@_;
-	
+	my $class = shift;
+	my $self = {};
+	return bless $self;
 }
 
 sub run{
-
+	print "hello, world!\n";
 }
+
 sub perform_blast_search {
 	my $gb = shift;
 	my $database = shift;
-	system("blastp -query $files{'cds_fasta'} -db $files{"${database}_fasta"} -outfmt 6 -out $files{'blast_output'} -max_target_seqs 5 -num_threads 4");
+	system("blastp -query $files{'cds_fasta'} -db $files{'database_fasta'} -outfmt 6 -out $files{'blast_output'} -max_target_seqs 5 -num_threads 4");
 	my $last_query;
 	my $blast;
 	open my $BLAST_OUTPUT, $files{'blast_output'} or die;
+
 	while(<$BLAST_OUTPUT>){
 		chomp;
 		my @line = split /\t/;
@@ -107,11 +115,12 @@ sub create_fasta {
 	my $gb = shift;
 	open my $CDS_FASTA, '>', $files{'cds_fasta'} or die;
 	for my $cds ( $gb->feature('CDS') ) {
-		my $translate = $gb->{$cds}->{'translation'} or translate $gb->get_geneseq($cds);
+		my $translate = $gb->{$cds}->{'translation'} or translate($gb->get_geneseq($cds));
 		print $CDS_FASTA '>'.$cds."\n";
 		print $CDS_FASTA $translate."\n";
 	}
 	close $CDS_FASTA;
+	return 1;
 }
 
 sub store_uniprot_to_kt {
@@ -125,6 +134,7 @@ sub store_uniprot_to_kt {
 		$tc_length->put($entry->ID, $aa_length);
 	}	
 	$/ = "/n";
+	return 1;
 }
 
 sub create_fasta_from_uniprot_flatfile {
@@ -137,11 +147,12 @@ sub create_fasta_from_uniprot_flatfile {
 		print $UNIPROT_FASTA $entry->SQ."\n";
 	}  
 	$/ = "/n";
+	return 1;
 }
+
 
 sub install_restauro {
 	my $self = shift;
-
 	my $executable = $0;
 	unless (File::Spec->file_name_is_absolute($executable) ){
 		$executable = File::Spec->rel2abs($executable);
@@ -198,12 +209,6 @@ GPL
 =head1 CREDITS
 
 =head2 CONTRIBUTORS
-
-Patches and code improvements were contributed by:
-
-Goro Fuji, Kazuhiro Osawa, Tokuhiro Matsuno, Kenichi Ishigaki, Ian
-Wells, Pedro Melo, Masayoshi Sekimura, Matt S Trout, squeeky, horus
-and Ingy dot Net.
 
 =head2 ACKNOWLEDGEMENTS
 
