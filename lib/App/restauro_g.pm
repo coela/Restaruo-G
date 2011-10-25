@@ -25,8 +25,8 @@ $files{'cds_fasta'} = "./hoge.fasta";
 $files{'trembl_fasta'} = "$ENV{'HOME'}/.glang/restauro_g/uniprot/trembl_fasta.fasta";
 $files{'blast_output'} = "hoge.out";
 $files{'dbm_uniprot'} = "./foo.db";
-$files{'sprot'} = "./uniprot_sprot_bacteria.dat";
-$files{'sprot_fasta'} = "./uniprot_sprot_bacteria.fasta";
+$files{'sprot'} = "./uniprot_sprot.dat";
+$files{'sprot_fasta'} = "./uniprot_sprot.fasta";
 
 my $tc = TokyoCabinet::HDB->new();
 if(!$tc->open("uniprot.tch", $tc->OWRITER | $tc->OCREAT)){
@@ -41,12 +41,13 @@ if(!$tc_length->open("uniprot_length.tch", $tc_length->OWRITER | $tc_length->OCR
 }
 
 ###
-
+#create_fasta_from_uniprot_flatfile();
+store_uniprot_to_tc();
 my $gb = load ($ARGV[0]);
 $gb->disable_pseudogenes();
 foreach my $database (@databases){
 	print $database."\n";
-	create_fasta($gb);
+#	create_fasta($gb);
 #	perform_blast_search($gb, $database);
 }
 ###
@@ -64,7 +65,8 @@ sub run{
 sub perform_blast_search {
 	my $gb = shift;
 	my $database = shift;
-	system("blastp -query $files{'cds_fasta'} -db $files{'database_fasta'} -outfmt 6 -out $files{'blast_output'} -max_target_seqs 5 -num_threads 4");
+#	system ("blastp -query $files{'cds_fasta'} -db $files{${database}.'_fasta'} -outfmt 6 -out $files{'blast_output'} -max_target_seqs 5 -num_threads 4");
+
 	my $last_query;
 	my $blast;
 	open my $BLAST_OUTPUT, $files{'blast_output'} or die;
@@ -73,7 +75,7 @@ sub perform_blast_search {
 		chomp;
 		my @line = split /\t/;
 		my $subject_seq_length = $tc_length->get($line[1]);
-		my $identity = $line[3]/$subject_seq_length;
+		my $identity = $line[3] / $subject_seq_length;
 		my $evalue = $line[10];
 
 		if ($evalue <= 1e-70 and $identity >= 0.98){
@@ -123,7 +125,7 @@ sub create_fasta {
 	return 1;
 }
 
-sub store_uniprot_to_kt {
+sub store_uniprot_to_tc {
 	open my $UNIPROT, $files{'sprot'} or die;	
 	$/ = "\/\/\n";
 	while (<$UNIPROT>){
