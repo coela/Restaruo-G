@@ -14,39 +14,38 @@ use File::Spec;
 use File::Spec::Functions qw( catfile );
 use File::Path::Tiny;
 
+my @databases = ('sprot','trembl');
+
+######SETTINGS#######
 my $ROOT					= $ENV{RESTAURO_G_ROOT} || catfile($ENV{HOME},"perl5","restauro_g");
 my $RESTAURO_HOME = $ENV{RESTAURO_G_HOME} || catfile($ENV{HOME},".restauro_g"); 
 
-my @databases = ('sprot');
-
-my %files;
-$files{'cds_fasta'} = "$ENV{'HOME'}/.restauro_g/tmp/cds_fasta.fasta";
-$files{'cds_fasta'} = "./hoge.fasta";
-$files{'trembl_fasta'} = "$ENV{'HOME'}/.glang/restauro_g/uniprot/trembl_fasta.fasta";
-$files{'blast_output'} = "hoge.out";
-$files{'dbm_uniprot'} = "./foo.db";
-$files{'sprot'} = "./uniprot_sprot.dat";
-$files{'sprot_fasta'} = "./uniprot_sprot.fasta";
+my %files = (
+#		'cds_fasta' => "$ENV{'HOME'}/.restauro_g/tmp/cds_fasta.fasta",
+		'cds_fasta' => "./hoge.fasta",
+		'trembl' => "./uniprot_trembl.dat",
+		'trembl_fasta' => "./trembl_fasta.fasta",
+		'blast_output' => "hoge.out",
+		'dbm_uniprot' => "./foo.db",
+		'sprot' => "./uniprot_sprot.dat",
+		'sprot_fasta' => "./uniprot_sprot.fasta",
+		);
 
 my $tc = TokyoCabinet::HDB->new();
 if(!$tc->open("uniprot.tch", $tc->OWRITER | $tc->OCREAT)){
 	my $ecode = $tc->ecode();
 	printf STDERR ("open error: %s\n", $tc->errmsg($ecode));
 }
+#####################
 
-my $tc_length = TokyoCabinet::HDB->new();
-if(!$tc_length->open("uniprot_length.tch", $tc_length->OWRITER | $tc_length->OCREAT)){
-	my $ecode = $tc_length->ecode();
-	printf STDERR ("open error: %s\n", $tc_length->errmsg($ecode));
-}
 
-###
-#create_fasta_from_uniprot_flatfile();
-store_uniprot_to_tc();
-my $gb = load ($ARGV[0]);
+my $gb = load ($ARGV[0],"no msg");
 $gb->disable_pseudogenes();
 foreach my $database (@databases){
 	print $database."\n";
+	create_fasta_from_uniprot_flatfile($database);
+	store_uniprot_to_tc($database);
+
 #	create_fasta($gb);
 #	perform_blast_search($gb, $database);
 }
@@ -74,7 +73,9 @@ sub perform_blast_search {
 	while(<$BLAST_OUTPUT>){
 		chomp;
 		my @line = split /\t/;
-		my $subject_seq_length = $tc_length->get($line[1]);
+		my $hogelength = length $tc->get($line[1]);
+#my $subject_seq_length = $tc_length->get($line[1]);
+		my $subject_seq_length = $hogelength;
 		my $identity = $line[3] / $subject_seq_length;
 		my $evalue = $line[10];
 
@@ -106,7 +107,8 @@ sub perform_blast_search {
 			my $uniprot = thaw $tc->get($tophit);
 
 			$gb->{$last_query}->{on} = 0 if $blast->{$tophit}->{"level"} <= 2;
-			print $last_query, " ",$uniprot->ID," ",$blast->{$tophit}->{e_value},"\n";
+			my $lengthseq = length $uniprot->SQ;
+			print $last_query, " ",$uniprot->ID," ",$blast->{$tophit}->{e_value}," ",$blast->{$tophit}->{"level"}," ",$lengthseq,"\n";
 			$blast = {};
 		}
 		$last_query = $line[0];
@@ -126,22 +128,22 @@ sub create_fasta {
 }
 
 sub store_uniprot_to_tc {
-	open my $UNIPROT, $files{'sprot'} or die;	
+	my $database = shift;
+	open my $UNIPROT, $files{$database} or die;	
 	$/ = "\/\/\n";
 	while (<$UNIPROT>){
 		my $entry = SWISS::Entry->fromText($_);
 		print $entry->ID, "\n";
 		$tc->put($entry->ID, freeze $entry);
-		my $aa_length = length $entry->SQ;
-		$tc_length->put($entry->ID, $aa_length);
 	}	
 	$/ = "/n";
 	return 1;
 }
 
 sub create_fasta_from_uniprot_flatfile {
-	open my $UNIPROT, $files{'sprot'} or die;
-	open my $UNIPROT_FASTA, '>', $files{'sprot_fasta'} or die;
+	my $database = shift;
+	open my $UNIPROT, $files{$database} or die;
+	open my $UNIPROT_FASTA, '>', $files{$database."_fasta"} or die;
 	$/ = "\/\/\n";
 	while (<$UNIPROT>){
 		my $entry = SWISS::Entry->fromText($_);
